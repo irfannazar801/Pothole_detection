@@ -38,6 +38,7 @@ def detect_wet_muddy(img):
     muddy = muddy_mask.mean() > 0.02
     return {'wet': bool(wet), 'muddy': bool(muddy), 'spec_mask': (spec_mask.astype(np.uint8)*255)}
 
+
 def simple_pothole_segmentation(img):
     """Fallback segmentation: edge + morphology. Prefer a trained model in production."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
