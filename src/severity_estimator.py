@@ -8,7 +8,7 @@ from enum import Enum
 import cv2
 import numpy as np
 
-from .config import Config
+from .config.config import Config
 
 
 class SeverityLevel(Enum):

@@ -19,7 +19,12 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 # Import and run main application
-from src.main import main
+from src.main import main, parse_arguments
 
+# Add argument parsing
 if __name__ == "__main__":
+    # Parse arguments using the existing function in src.main
+    args = parse_arguments()
+
+    # Run the main function
     sys.exit(main())

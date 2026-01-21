@@ -7,7 +7,7 @@ import cv2
 import os
 from typing import Optional, Callable
 
-from .config import Config
+from .config.config import Config
 from .detector import PotholeDetector
 
 

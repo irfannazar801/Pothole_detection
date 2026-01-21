@@ -17,7 +17,8 @@ __version__ = "2.0.0"
 __author__ = "AI Assistant"
 __license__ = "MIT"
 
-from .config import Config
+# Import configuration module
+from .config import config
 from .detector import PotholeDetector
 from .tracker import DetectionTracker
 from .severity_estimator import DepthEstimator
