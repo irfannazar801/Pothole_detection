@@ -71,20 +71,20 @@ def load_midas():
     if midas_model is not None or not HAS_TORCH:
         return
 
-    print("🧠 Loading MiDaS Neural Network (MAX ACCURACY MODE - DPT_Large)...")
+    print("🧠 Loading MiDaS Neural Network (Optimized for Real-time)...")
     try:
-        # ACCURACY UPGRADE: Using DPT_Large.
-        # "By any means" implies trading speed for the best possible depth accuracy.
-        model_type = "DPT_Large"
+        # OPTIMIZATION: Using MiDaS_small for faster inference
+        # For better real-time performance, use smaller model
+        model_type = "MiDaS_small"  # Changed from DPT_Large to MiDaS_small
 
         # Load from torch hub
-        midas_model = torch.hub.load("intel-isl/MiDaS", model_type)
+        midas_model = torch.hub.load("intel-isl/MiDaS", model_type, trust_repo=True)
 
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         midas_model.to(device)
         midas_model.eval()
 
-        midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
+        midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms", trust_repo=True)
 
         if model_type == "MiDaS_small":
             midas_transform = midas_transforms.small_transform
@@ -102,6 +102,7 @@ def run_midas_depth(img):
     """
     Runs MiDaS Neural Network to get high-accuracy relative depth map.
     Returns: float32 depth map (Inverse Depth: High=Close, Low=Far).
+    Optimized for real-time performance.
     """
     global midas_model
 
@@ -111,41 +112,36 @@ def run_midas_depth(img):
 
     if midas_model is not None:
         try:
-            # Resize image to a small fixed size for faster inference
-            # MiDaS small works well with 256x256 or 384x384
-            # We preserve aspect ratio during transform usually,
-            # but let's ensure input isn't massive.
-
             # Transform input
             input_batch = midas_transform(img).to(device)
 
-            # Inference
+            # Inference with no gradient tracking for speed
             with torch.no_grad():
                 prediction = midas_model(input_batch)
 
-                # Resize to original resolution
+                # Resize to original resolution with bilinear for speed
                 prediction = torch.nn.functional.interpolate(
                     prediction.unsqueeze(1),
                     size=img.shape[:2],
-                    mode="bicubic", # Reverting to Bicubic for higher quality interpolation
+                    mode="bilinear",  # Changed from bicubic to bilinear for faster processing
                     align_corners=False,
                 ).squeeze()
 
             depth_map = prediction.cpu().numpy()
 
-            # Normalize to 0-1 for consistent scaling with our heuristic
+            # Normalize to 0-1 for consistent scaling
             d_min = depth_map.min()
             d_max = depth_map.max()
             depth_map_norm = (depth_map - d_min) / (d_max - d_min + 1e-8)
 
-            # ENHANCEMENT: Apply local contrast enhancement (CLAHE) to depth map
-            # This helps bring out the pothole structure from the road surface
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            # OPTIMIZATION: Reduced CLAHE processing for speed
+            # Apply light contrast enhancement
+            clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8,8))
             depth_map_norm_u8 = (depth_map_norm * 255).astype(np.uint8)
             depth_enhanced = clahe.apply(depth_map_norm_u8).astype(np.float32) / 255.0
 
             # Blend enhanced with original for stability
-            return (0.7 * depth_map_norm + 0.3 * depth_enhanced).astype(np.float32)
+            return (0.8 * depth_map_norm + 0.2 * depth_enhanced).astype(np.float32)
 
         except Exception as e:
             print(f"⚠️ MiDaS Inference Error: {e}, falling back to Sobel.")

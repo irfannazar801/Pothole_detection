@@ -1,0 +1,17 @@
+# Core Dependencies
+opencv-python>=4.5.0
+numpy>=1.19.0
+ultralytics>=8.0.0
+
+# Deep Learning
+torch>=1.10.0
+torchvision>=0.11.0
+
+# Optional: For faster inference
+# onnxruntime-gpu>=1.10.0  # Uncomment for ONNX support
+
+# Development Dependencies (optional)
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=4.0.0
+# mypy>=0.950
