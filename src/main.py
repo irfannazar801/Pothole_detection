@@ -27,6 +27,7 @@ def parse_arguments():
 Examples:
   %(prog)s                          # Run with default settings
   %(prog)s --video input.mp4        # Process specific video
+  %(prog)s --bluetooth --video demo.mp4  # Enable Bluetooth for mobile app
   %(prog)s --model best.pt          # Use specific model
   %(prog)s --preset speed           # Use speed preset
   %(prog)s --no-tracking            # Disable tracking
@@ -57,6 +58,18 @@ Examples:
         '--no-tracking',
         action='store_true',
         help='Disable temporal tracking'
+    )
+
+    parser.add_argument(
+        '--bluetooth',
+        action='store_true',
+        help='Enable Bluetooth transmission to mobile app'
+    )
+
+    parser.add_argument(
+        '--websocket',
+        action='store_true',
+        help='Enable WebSocket transmission to mobile app (recommended)'
     )
 
     parser.add_argument(
@@ -113,7 +126,7 @@ def print_banner():
     print(banner)
 
 
-def print_configuration(config: Config):
+def print_configuration(config: Config, bluetooth_enabled: bool = False, websocket_enabled: bool = False):
     """Print current configuration."""
     print("\n📋 Configuration:")
     print(f"  Video: {config.video.video_path}")
@@ -123,6 +136,8 @@ def print_configuration(config: Config):
     print(f"  Inference Size: {config.optimization.inference_size}")
     print(f"  Tracking: {'Enabled' if config.optimization.enable_tracking else 'Disabled'}")
     print(f"  FP16: {'Enabled' if config.model.use_half_precision else 'Disabled'}")
+    print(f"  Bluetooth: {'Enabled' if bluetooth_enabled else 'Disabled'}")
+    print(f"  WebSocket: {'Enabled' if websocket_enabled else 'Disabled'}")
     print()
 
 
@@ -151,7 +166,7 @@ def main():
         return 1
 
     # Print configuration
-    print_configuration(config)
+    print_configuration(config, bluetooth_enabled=args.bluetooth, websocket_enabled=args.websocket)
     print_controls()
 
     # Initialize detector
@@ -162,8 +177,53 @@ def main():
         print("❌ Failed to load model. Exiting.")
         return 1
 
-    # Initialize video processor
-    processor = VideoProcessor(config, detector)
+    # Initialize video processor with Bluetooth or WebSocket support
+    processor = VideoProcessor(
+        config, 
+        detector, 
+        enable_bluetooth=args.bluetooth,
+        enable_websocket=args.websocket
+    )
+    
+    if args.websocket:
+        print()
+        print("=" * 70)
+        print("📱 WEBSOCKET MODE - Waiting for mobile app connection")
+        print("=" * 70)
+        print()
+        print("WebSocket is better than Bluetooth:")
+        print("   ✅ More reliable connection")
+        print("   ✅ Faster data transfer")
+        print("   ✅ Works over WiFi (better range)")
+        print("   ✅ No pairing needed")
+        print()
+        print("The server is now running and waiting for your phone to connect.")
+        print()
+    
+    if args.bluetooth:
+        print()
+        print("=" * 60)
+        print("📱 BLUETOOTH MODE - Waiting for mobile app connection")
+        print("=" * 60)
+        print()
+        print("On your Android phone:")
+        print("   1. Open the Pothole Detection app")
+        print("   2. Tap 'Connect to Device'")
+        print("   3. Select this PC from the list")
+        print()
+        print("Waiting for connection (you can also skip with video starting)...")
+        print()
+        
+        # Give the app time to connect before starting video
+        import time
+        for i in range(10):
+            if processor.bluetooth.is_connected:
+                print("✅ Phone connected! Starting video...")
+                break
+            processor.bluetooth.accept_connection(timeout=1.0)
+            if i == 9:
+                print("ℹ️ No connection yet, starting anyway (will keep trying)...")
+        print()
 
     # Open video
     if not processor.open_video():

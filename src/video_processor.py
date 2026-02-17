@@ -5,10 +5,21 @@ Handles video input, frame processing, and display.
 
 import cv2
 import os
+import time
 from typing import Optional, Callable
 
 from .config.config import Config
 from .detector import PotholeDetector
+
+try:
+    from .bluetooth_transmitter import BluetoothTransmitter
+except ImportError:
+    from .bluetooth_transmitter import BluetoothTransmitterStub as BluetoothTransmitter
+
+try:
+    from .websocket_transmitter import WebSocketTransmitter
+except ImportError:
+    from .websocket_transmitter import WebSocketTransmitterStub as WebSocketTransmitter
 
 
 class VideoProcessor:
@@ -16,13 +27,16 @@ class VideoProcessor:
     Handles video input and processing for pothole detection.
     """
 
-    def __init__(self, config: Config, detector: PotholeDetector):
+    def __init__(self, config: Config, detector: PotholeDetector, 
+                 enable_bluetooth: bool = False, enable_websocket: bool = False):
         """
         Initialize video processor.
 
         Args:
             config: Configuration object
             detector: PotholeDetector instance
+            enable_bluetooth: Enable Bluetooth transmission
+            enable_websocket: Enable WebSocket transmission (recommended)
         """
         self.config = config
         self.detector = detector
@@ -30,6 +44,21 @@ class VideoProcessor:
         self.frame_count = 0
         self.total_frames = 0
         self.fps = 0
+        
+        # Initialize Bluetooth transmitter
+        self.bluetooth = BluetoothTransmitter(enabled=enable_bluetooth) if enable_bluetooth else None
+        if self.bluetooth and self.bluetooth.enabled:
+            print("📡 Bluetooth transmitter initialized")
+        
+        # Initialize WebSocket transmitter
+        self.websocket = WebSocketTransmitter(enabled=enable_websocket) if enable_websocket else None
+        if self.websocket and self.websocket.enabled:
+            print("📡 WebSocket transmitter initialized")
+        
+        # Frame sending tracking
+        self.last_frame_send_time = 0
+        self.frame_send_interval = 1.0 / 30.0  # 30 FPS = 0.033 seconds per frame
+        self.frames_sent = 0  # Track frames sent for debugging
 
     def open_video(self, video_path: Optional[str] = None) -> bool:
         """
@@ -144,7 +173,20 @@ class VideoProcessor:
         self.frame_count = 0
 
         try:
+            import time
+            
+            # Print initial status
+            print(f"\n🎥 Starting video processing...")
+            print(f"📶 WebSocket enabled: {self.websocket is not None}")
+            if self.websocket:
+                print(f"🔌 WebSocket connected: {self.websocket.is_connected}")
+            print()
+            
             while True:
+                # Try to accept Bluetooth connection from phone (non-blocking)
+                if self.bluetooth and self.bluetooth.enabled and not self.bluetooth.is_connected:
+                    self.bluetooth.accept_connection(timeout=0.001)
+                
                 ret, frame = self.cap.read()
 
                 if not ret:
@@ -153,8 +195,32 @@ class VideoProcessor:
 
                 self.frame_count += 1
 
-                # Skip frame if configured
+                # Skip detection processing if frame skip is configured
+                # But still send frames via WebSocket for smooth video
                 if not self._should_process_frame():
+                    # Send raw frame without detections for smooth video
+                    current_time = time.time()
+                    if self.websocket and self.websocket.is_connected:
+                        if (current_time - self.last_frame_send_time) >= self.frame_send_interval:
+                            display_frame = cv2.resize(frame, (400, 300))  # Reduced resolution for faster transmission
+                            _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])  # Lower quality for smaller size
+                            frame_bytes = buffer.tobytes()
+                            success = self.websocket.send_frame(frame_bytes)
+                            if success:
+                                self.last_frame_send_time = current_time
+                                self.frames_sent += 1
+                                # Print debug info for first frame
+                                if self.frames_sent == 1:
+                                    print(f"✅ First frame sent! Size: {len(frame_bytes)} bytes")
+                    elif self.bluetooth and self.bluetooth.is_connected:
+                        if (current_time - self.last_frame_send_time) >= self.frame_send_interval:
+                            display_frame = cv2.resize(frame, (320, 240))
+                            _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                            frame_bytes = buffer.tobytes()
+                            self.bluetooth.send_frame(frame_bytes)
+                            self.last_frame_send_time = current_time
+                            self.frames_sent += 1
+                    
                     cv2.imshow('Pothole Detector', frame)
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
@@ -163,8 +229,88 @@ class VideoProcessor:
                 # Detect potholes
                 detections, _ = self.detector.detect(frame)
 
+                # Send detections via WebSocket or Bluetooth
+                if detections:
+                    for detection in detections:
+                        # Detection is a tuple: ((x1, y1, x2, y2), label, color)
+                        box, label, color = detection
+                        x1, y1, x2, y2 = box
+
+                        # Parse label to extract severity and depth
+                        # Label format: "MUD: CRITICAL (15.2cm)" or "DRY: MODERATE (8.5cm)"
+                        try:
+                            parts = label.split(': ')
+                            pothole_type = parts[0] if len(parts) > 1 else "UNKNOWN"
+                            severity_depth = parts[1] if len(parts) > 1 else label
+
+                            # Extract severity and depth from "CRITICAL (15.2cm)"
+                            if '(' in severity_depth:
+                                severity = severity_depth.split('(')[0].strip()
+                                depth_str = severity_depth.split('(')[1].split('cm')[0]
+                                depth = float(depth_str)
+                            else:
+                                severity = severity_depth
+                                depth = 0.0
+                        except:
+                            severity = "UNKNOWN"
+                            depth = 0.0
+                            pothole_type = "UNKNOWN"
+
+                        # Estimate distance and width from box (simplified)
+                        # Use the physics calculator for more accurate estimates
+                        width_px = x2 - x1
+                        height_px = y2 - y1
+
+                        # Simple estimation (would need proper calibration)
+                        distance = 200.0  # Default distance in cm
+                        width = width_px * 0.5  # Rough estimate
+
+                        # Send via WebSocket (priority)
+                        if self.websocket and self.websocket.is_connected:
+                            self.websocket.send_detection(
+                                severity=severity,
+                                confidence=0.85,  # Default confidence
+                                distance=distance,
+                                width=width,
+                                depth=depth
+                            )
+                        # Or send via Bluetooth
+                        elif self.bluetooth and self.bluetooth.is_connected:
+                            self.bluetooth.send_detection(
+                                severity=severity,
+                                confidence=0.85,
+                                distance=distance,
+                                width=width,
+                                depth=depth
+                            )
+
                 # Draw annotations
                 annotated_frame = self.detector.draw_detections(frame, detections)
+
+                # Send annotated frame via WebSocket at 20 FPS
+                current_time = time.time()
+                if self.websocket and self.websocket.is_connected:
+                    if (current_time - self.last_frame_send_time) >= self.frame_send_interval:
+                        # Resize for transmission (400x300 for faster transmission)
+                        display_frame = cv2.resize(annotated_frame, (400, 300))
+                        _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                        frame_bytes = buffer.tobytes()
+                        success = self.websocket.send_frame(frame_bytes)
+                        if success:
+                            self.last_frame_send_time = current_time
+                            self.frames_sent += 1
+                            # Print status every 30 frames (once per second at 30 FPS)
+                            if self.frames_sent % 30 == 0:
+                                print(f"📹 Sent {self.frames_sent} frames via WebSocket ({len(frame_bytes)} bytes)")
+                # Send via Bluetooth (lower quality for bandwidth)
+                elif self.bluetooth and self.bluetooth.is_connected:
+                    if (current_time - self.last_frame_send_time) >= self.frame_send_interval:
+                        display_frame = cv2.resize(annotated_frame, (320, 240))
+                        _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+                        frame_bytes = buffer.tobytes()
+                        self.bluetooth.send_frame(frame_bytes)
+                        self.last_frame_send_time = current_time
+                        self.frames_sent += 1
 
                 # Call callback if provided
                 if on_frame_callback is not None:
@@ -192,6 +338,10 @@ class VideoProcessor:
 
     def cleanup(self):
         """Release resources."""
+        if self.websocket:
+            self.websocket.disconnect()
+        if self.bluetooth:
+            self.bluetooth.disconnect()
         if self.cap is not None:
             self.cap.release()
         cv2.destroyAllWindows()

@@ -11,7 +11,7 @@ from typing import Optional
 class VideoConfig:
     """Video input and display configuration."""
     video_path: str = "videos/demo.mp4"
-    frame_delay_ms: int = 1  # 1 = Fastest, 30 = Normal, 100 = Slow Motion
+    frame_delay_ms: int = 30  # 1 = Fastest, 30 = Normal (real-time), 100 = Slow Motion
     display_window_width: int = 1024
     display_window_height: int = 768
 
