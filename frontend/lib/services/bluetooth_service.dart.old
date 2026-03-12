@@ -1,0 +1,209 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import '../models/pothole_detection.dart';
+
+class BluetoothService extends ChangeNotifier {
+  final FlutterBluetoothSerial _bluetooth = FlutterBluetoothSerial.instance;
+  BluetoothConnection? _connection;
+  bool _isConnecting = false;
+  bool _isConnected = false;
+  final List<BluetoothDevice> _devices = [];
+  String _connectionStatus = 'Ready - Run Python script to start';
+  
+  List<PotholeDetection> _detections = [];
+  PotholeDetection? _latestDetection;
+  Uint8List? _latestFrame;
+  
+  String _buffer = '';
+
+  bool get isConnecting => _isConnecting;
+  bool get isConnected => _isConnected;
+  List<BluetoothDevice> get devices => _devices;
+  String get connectionStatus => _connectionStatus;
+  List<PotholeDetection> get detections => _detections;
+  PotholeDetection? get latestDetection => _latestDetection;
+  Uint8List? get latestFrame => _latestFrame;
+
+  BluetoothService() {
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      bool? isEnabled = await _bluetooth.isEnabled;
+      if (isEnabled == false) {
+        await _bluetooth.requestEnable();
+      }
+      _connectionStatus = 'Ready to scan';
+      notifyListeners();
+    } catch (e) {
+      print('Error initializing bluetooth: $e');
+    }
+  }
+
+  Future<void> scanDevices() async {
+    _devices.clear();
+    _connectionStatus = 'Scanning for paired devices...';
+    notifyListeners();
+
+    try {
+      // Get bonded/paired devices only (Android requirement for Classic Bluetooth)
+      List<BluetoothDevice> bondedDevices = await _bluetooth.getBondedDevices();
+      _devices.addAll(bondedDevices);
+      
+      if (_devices.isEmpty) {
+        _connectionStatus = 'No paired devices. Pair PC in Bluetooth settings first!';
+      } else {
+        _connectionStatus = 'Found ${_devices.length} paired device(s)';
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error scanning devices: $e');
+      _connectionStatus = 'Error scanning: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<String?> connectToDevice(BluetoothDevice device) async {
+    if (_isConnecting || _isConnected) return null;
+
+    _isConnecting = true;
+    _connectionStatus = 'Connecting to ${device.name}...';
+    notifyListeners();
+
+    try {
+      _connection = await BluetoothConnection.toAddress(device.address)
+          .timeout(Duration(seconds: 15));
+      _isConnected = true;
+      _isConnecting = false;
+      _connectionStatus = 'Connected to ${device.name}';
+      notifyListeners();
+
+      // Listen to incoming data
+      _connection!.input!.listen(
+        _onDataReceived,
+        onDone: () {
+          print('❌ Manual connection closed');
+          _onDisconnected();
+        },
+        onError: (error) {
+          print('❌ Manual connection error: $error');
+          _onDisconnected();
+        },
+        cancelOnError: false,
+      );
+
+      print('✓ Connected to ${device.name}');
+      return null; // Success
+    } catch (e) {
+      print('❌ Manual connection failed: $e');
+      _isConnecting = false;
+      _isConnected = false;
+      _connectionStatus = 'Connection failed';
+      notifyListeners();
+      
+      // Return user-friendly error message
+      if (e.toString().contains('read failed') || e.toString().contains('timeout')) {
+        return 'Device not responding. Make sure:\n\n'
+               '1. Python server is running on PC\n'
+               '2. Run: python run.py --bluetooth\n'
+               '3. Check Bluetooth is enabled on PC';
+      }
+      return 'Connection failed: ${e.toString()}';
+    }
+  }
+
+  void _onDataReceived(Uint8List data) {
+    try {
+      String received = utf8.decode(data, allowMalformed: true);
+      _buffer += received;
+
+      // Process complete JSON messages (lines ending with newline)
+      while (_buffer.contains('\n')) {
+        int newlineIndex = _buffer.indexOf('\n');
+        String message = _buffer.substring(0, newlineIndex).trim();
+        _buffer = _buffer.substring(newlineIndex + 1);
+
+        if (message.isNotEmpty) {
+          _processMessage(message);
+        }
+      }
+      
+      // Prevent buffer overflow
+      if (_buffer.length > 10000) {
+        print('⚠️ Buffer overflow, clearing');
+        _buffer = '';
+      }
+    } catch (e) {
+      print('❌ Error processing data: $e');
+      _buffer = ''; // Clear corrupted buffer
+    }
+  }
+
+  void _processMessage(String message) {
+    try {
+      Map<String, dynamic> json = jsonDecode(message);
+      
+      if (json['type'] == 'detection') {
+        PotholeDetection detection = PotholeDetection.fromJson(json['data']);
+        _latestDetection = detection;
+        _detections.insert(0, detection);
+        
+        // Keep only last 100 detections
+        if (_detections.length > 100) {
+          _detections = _detections.sublist(0, 100);
+        }
+        
+        notifyListeners();
+        
+        print('✓ Detection: ${detection.severity} - ${detection.distance}cm');
+      } else if (json['type'] == 'frame') {
+        // Decode base64 frame data
+        String frameBase64 = json['data']['frame'];
+        _latestFrame = base64Decode(frameBase64);
+        notifyListeners();
+        print('✓ Frame received (${_latestFrame!.length} bytes)');
+      } else if (json['type'] == 'ping') {
+        // Keep-alive ping from Python
+        print('✓ Ping received');
+      }
+    } catch (e) {
+      print('❌ Parse error: $e');
+      print('   Message: ${message.substring(0, message.length > 100 ? 100 : message.length)}...');
+    }
+  }
+
+  void _onDisconnected() {
+    print('🔌 Disconnected from PC');
+    _isConnected = false;
+    _connection = null;
+    _connectionStatus = 'Disconnected';
+    _buffer = ''; // Clear buffer on disconnect
+    notifyListeners();
+  }
+
+  Future<void> disconnect() async {
+    if (_connection != null) {
+      await _connection!.close();
+      _connection = null;
+    }
+    _isConnected = false;
+    _connectionStatus = 'Disconnected';
+    notifyListeners();
+  }
+
+  void clearDetections() {
+    _detections.clear();
+    _latestDetection = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    disconnect();
+    super.dispose();
+  }
+}

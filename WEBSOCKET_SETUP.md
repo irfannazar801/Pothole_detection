@@ -16,9 +16,11 @@
 ### Step 1: Install Requirements
 
 ```cmd
-cd c:\Users\ajith\PycharmProjects\Pothole_detection
-pip install websockets
+cd c:\Users\ajith\PycharmProjects\Pothole_detection\backend
+pip install -r requirements.txt
 ```
+
+Note: WebSockets is already included in requirements.txt
 
 ### Step 2: Test WebSocket Connection
 
@@ -60,25 +62,31 @@ ifconfig
 
 Once the test works, run the full application:
 
-**Easy Way (Double-click):**
+**Easy Way (Double-click from root):**
 ```
-Double-click: run_websocket.bat
+Double-click: run_backend_websocket.bat
 ```
 
 **Command Line:**
 ```cmd
+cd backend
 python run.py --websocket
 ```
 
----
-
-## Flutter App Changes
-
-The Flutter app has been updated to use WebSocket instead of Bluetooth:
+**Alternative - From root directory:**
+```cmd
+run_backend.bat --websocket
+```moved to the `frontend/` folder and updated to use WebSocket:
 
 **What Changed:**
 - Removed Bluetooth dependencies
 - Added WebSocket support with `web_socket_channel`
+- New connection screen to enter server IP
+- More reliable connection handling
+
+**How to Update App:**
+```cmd
+cd c:\Users\ajith\PycharmProjects\Pothole_detection\frontendnel`
 - New connection screen to enter server IP
 - More reliable connection handling
 

@@ -1,0 +1,221 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/bluetooth_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+class BluetoothConnectionScreen extends StatefulWidget {
+  const BluetoothConnectionScreen({super.key});
+
+  @override
+  State<BluetoothConnectionScreen> createState() => _BluetoothConnectionScreenState();
+}
+
+class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _requestPermissions();
+    // Auto-scan for devices on startup
+    final bluetoothService = Provider.of<BluetoothService>(context, listen: false);
+    await bluetoothService.scanDevices();
+  }
+
+  Future<void> _requestPermissions() async {
+    await Permission.bluetooth.request();
+    await Permission.bluetoothConnect.request();
+    await Permission.bluetoothScan.request();
+    await Permission.location.request();
+    await Permission.locationWhenInUse.request();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<BluetoothService>(
+      builder: (context, bluetoothService, child) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('Connect to Device'),
+            backgroundColor: Colors.blue.shade800,
+          ),
+          body: bluetoothService.devices.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text(
+                        'Scanning for devices...',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Looking for paired Bluetooth devices',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    // Instructions banner
+                    Container(
+                      margin: EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.orange.shade700),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Before Connecting',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Start server on PC:\nDouble-click: run_bluetooth.bat\nOR run: python run.py --bluetooth',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Device list
+                    Expanded(
+                      child: ListView.builder(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: bluetoothService.devices.length,
+                        itemBuilder: (context, index) {
+                          final device = bluetoothService.devices[index];
+                          return Card(
+                            margin: EdgeInsets.only(bottom: 12),
+                            child: ListTile(
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              leading: Icon(
+                                Icons.bluetooth,
+                                color: Colors.blue,
+                                size: 36,
+                              ),
+                              title: Text(
+                                device.name ?? 'Unknown Device',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              subtitle: Text(device.address),
+                              trailing: bluetoothService.isConnecting
+                                  ? SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : Icon(Icons.arrow_forward_ios),
+                              onTap: bluetoothService.isConnecting
+                                  ? null
+                                  : () async {
+                                      String? error = await bluetoothService.connectToDevice(device);
+                                      if (!context.mounted) return;
+                                      
+                                      if (error != null) {
+                                        // Show error dialog
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: Row(
+                                              children: [
+                                                Icon(Icons.error_outline, color: Colors.red),
+                                                SizedBox(width: 8),
+                                                Text('Connection Failed'),
+                                              ],
+                                            ),
+                                            content: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(error),
+                                                SizedBox(height: 16),
+                                                Container(
+                                                  padding: EdgeInsets.all(12),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        'Troubleshooting:',
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Colors.blue.shade900,
+                                                        ),
+                                                      ),
+                                                      SizedBox(height: 8),
+                                                      Text(
+                                                        'Option 1 (Easy):\n'
+                                                        '• Go to: c:\\Users\\ajith\\PycharmProjects\\Pothole_detection\n'
+                                                        '• Double-click: run_bluetooth.bat\n\n'
+                                                        'Option 2 (Manual):\n'
+                                                        '• Open Command Prompt\n'
+                                                        '• cd c:\\Users\\ajith\\PycharmProjects\\Pothole_detection\n'
+                                                        '• python run.py --bluetooth\n\n'
+                                                        'Wait for "Bluetooth server started", then retry',
+                                                        style: TextStyle(fontSize: 12),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(context),
+                                                child: Text('OK'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      } else if (bluetoothService.isConnected) {
+                                        Navigator.pushReplacementNamed(context, '/');
+                                      }
+                                    },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
