@@ -57,7 +57,7 @@ class VideoProcessor:
         
         # Frame sending tracking
         self.last_frame_send_time = 0
-        self.frame_send_interval = 1.0 / 30.0  # 30 FPS = 0.033 seconds per frame
+        self.frame_send_interval = 1.0 / 10.0  # 10 FPS = 0.1 seconds per frame (optimized for low lag)
         self.frames_sent = 0  # Track frames sent for debugging
 
     def open_video(self, video_path: Optional[str] = None) -> bool:
@@ -202,8 +202,8 @@ class VideoProcessor:
                     current_time = time.time()
                     if self.websocket and self.websocket.is_connected:
                         if (current_time - self.last_frame_send_time) >= self.frame_send_interval:
-                            display_frame = cv2.resize(frame, (400, 300))  # Reduced resolution for faster transmission
-                            _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])  # Lower quality for smaller size
+                            display_frame = cv2.resize(frame, (320, 240))  # Very small resolution for minimal lag
+                            _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 30])  # Very low quality for maximum speed
                             frame_bytes = buffer.tobytes()
                             success = self.websocket.send_frame(frame_bytes)
                             if success:
@@ -287,20 +287,20 @@ class VideoProcessor:
                 # Draw annotations
                 annotated_frame = self.detector.draw_detections(frame, detections)
 
-                # Send annotated frame via WebSocket at 20 FPS
+                # Send annotated frame via WebSocket at 10 FPS (ultra optimized for no lag)
                 current_time = time.time()
                 if self.websocket and self.websocket.is_connected:
                     if (current_time - self.last_frame_send_time) >= self.frame_send_interval:
-                        # Resize for transmission (400x300 for faster transmission)
-                        display_frame = cv2.resize(annotated_frame, (400, 300))
-                        _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                        # Resize for transmission (320x240 for minimal lag with detection boxes)
+                        display_frame = cv2.resize(annotated_frame, (320, 240))
+                        _, buffer = cv2.imencode('.jpg', display_frame, [cv2.IMWRITE_JPEG_QUALITY, 40])  # Low quality for speed
                         frame_bytes = buffer.tobytes()
                         success = self.websocket.send_frame(frame_bytes)
                         if success:
                             self.last_frame_send_time = current_time
                             self.frames_sent += 1
-                            # Print status every 30 frames (once per second at 30 FPS)
-                            if self.frames_sent % 30 == 0:
+                            # Print status every 10 frames (once per second at 10 FPS)
+                            if self.frames_sent % 10 == 0:
                                 print(f"📹 Sent {self.frames_sent} frames via WebSocket ({len(frame_bytes)} bytes)")
                 # Send via Bluetooth (lower quality for bandwidth)
                 elif self.bluetooth and self.bluetooth.is_connected:
