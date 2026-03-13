@@ -15,6 +15,7 @@ backend/src/__pycache__/
 backend/videos/*.mp4
 backend/videos/*.avi
 backend/models/*.pt
+backend/paper
 
 # Frontend specific - Flutter/Dart
 frontend/build/

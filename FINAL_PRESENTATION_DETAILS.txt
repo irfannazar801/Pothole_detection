@@ -1,0 +1,246 @@
+POTHOLE DETECTION SYSTEM - FINAL PRESENTATION DETAILS
+Version: 2.0.0
+Status: Production Ready
+Last Updated in docs: March 2026
+
+============================================================
+1) PROJECT OVERVIEW (WHAT IT IS)
+============================================================
+This project is a complete pothole detection and analysis system. It uses
+computer vision and deep learning to detect potholes in video frames and
+estimate their depth, then classifies severity. The system has two main
+parts:
+- Backend (Python): detection, depth estimation, tracking, severity
+- Frontend (Flutter): mobile UI that receives alerts (WebSocket)
+
+Key idea: two neural networks are used in sequence:
+1) YOLOv8 for object detection (find potholes)
+2) MiDaS for depth estimation (estimate pothole depth)
+
+Everything else is classical algorithms (tracking, geometry, thresholds).
+
+============================================================
+2) PROBLEM STATEMENT (WHY IT MATTERS)
+============================================================
+- Potholes cause accidents, vehicle damage, and maintenance costs.
+- Manual inspection is slow and expensive.
+- A real-time detection system can help authorities and drivers identify
+  dangerous road segments faster and prioritize repairs.
+
+============================================================
+3) PROJECT GOALS (OBJECTIVES)
+============================================================
+- Detect potholes in video streams reliably and in real time.
+- Estimate physical severity (depth-based) for prioritization.
+- Provide an easy-to-use front end for live monitoring and alerts.
+- Offer configurable presets for speed vs accuracy.
+- Provide a modular, professional codebase for future expansion.
+
+============================================================
+4) HIGH-LEVEL ARCHITECTURE
+============================================================
+Dual Neural Network Pipeline:
+
+Video Stream
+   -> Frame Processing
+   -> YOLOv8 Detection (ANN #1)
+   -> Extract pothole regions (ROIs)
+   -> MiDaS Depth Estimation (ANN #2)
+   -> Severity Classification (rules + thresholds)
+   -> IoU-based Tracking (temporal smoothing)
+   -> Visualization + Output
+   -> Optional WebSocket Stream to Frontend
+
+============================================================
+5) TECH STACK
+============================================================
+Backend:
+- Python 3.8+
+- PyTorch 1.10+
+- Ultralytics YOLOv8
+- OpenCV 4.5+
+- NumPy 1.19+
+- WebSockets 12.0+
+
+Frontend:
+- Flutter 3.0+ (Dart 2.17+)
+- WebSocket client (web_socket_channel)
+
+============================================================
+6) CORE MODULES (BACKEND)
+============================================================
+- config.py: Dataclass-based configuration + presets
+- detector.py: YOLO model loading, inference, annotation
+- tracker.py: IoU tracking and temporal smoothing
+- severity_estimator.py: depth estimation and severity classification
+- video_processor.py: video I/O, frame loop, keyboard controls
+- main.py: CLI arguments and orchestration
+- websocket_transmitter.py: live data streaming to frontend
+
+============================================================
+7) NEURAL NETWORK #1 - YOLOv8 (OBJECT DETECTION)
+============================================================
+Purpose: locate potholes in each frame.
+Input: full frame (default 640x640, configurable)
+Output: bounding boxes + confidence scores
+
+Model notes (from docs):
+- YOLOv8n or YOLOv8s (nano/small) variants
+- Single class: pothole
+- Typical metrics (test set):
+  Precision ~85-92%, Recall ~80-88%, mAP@0.5 ~0.85
+
+Key parameters:
+- confidence_threshold (default balanced: 0.35)
+- iou_threshold (default 0.45)
+- max_detections per frame (default 10)
+
+============================================================
+8) NEURAL NETWORK #2 - MiDaS (DEPTH ESTIMATION)
+============================================================
+Purpose: estimate depth of pothole regions.
+Input: cropped ROI from detected pothole bounding box
+Output: relative depth map
+
+MiDaS is used to provide depth cues from monocular RGB images. The depth
+is combined with geometric estimation to generate a final severity score.
+
+============================================================
+9) DEPTH ESTIMATION + SEVERITY CLASSIFICATION
+============================================================
+Hybrid depth approach:
+- Neural depth (MiDaS)
+- Geometric depth (camera calibration, pinhole model)
+- Combined using weighted fusion (example weights: 0.6 neural, 0.4 geo)
+
+Severity Levels (depth-based thresholds):
+- CRITICAL  : > 15 cm
+- DANGEROUS: 10-15 cm
+- MODERATE : 6-10 cm
+- MINOR    : 3-6 cm
+- SURFACE  : < 3 cm
+
+============================================================
+10) TRACKING AND TEMPORAL SMOOTHING
+============================================================
+- Uses IoU (Intersection over Union) to match detections between frames.
+- Smooths bounding box positions across a buffer of frames.
+- Reduces jitter and false positives in real-time output.
+
+============================================================
+11) PERFORMANCE PRESETS
+============================================================
+Presets in config:
+- accuracy: lower confidence, no frame skip, best quality
+- balanced: default, good balance
+- speed: higher confidence, frame skip, smaller inference size
+- cpu: reduced inference size, FP16 disabled, frame skipping
+
+============================================================
+12) FRONTEND (FLUTTER APP)
+============================================================
+Purpose: display live pothole alerts and statuses.
+Connection: WebSocket over WiFi to backend server.
+
+Key functionality:
+- Connect to backend using IP address
+- Live alerts with severity labels
+- Color-coded severity display
+- Real-time data streaming from backend
+
+============================================================
+13) WEBSOCKET COMMUNICATION
+============================================================
+Why WebSocket (per docs):
+- More reliable than Bluetooth
+- Faster and easier to connect
+- Supports multiple devices
+
+Default port: 8765
+Flow:
+- Start backend with --websocket
+- Phone connects to ws://<PC_IP>:8765
+
+============================================================
+14) HOW TO RUN (DEMO FLOW)
+============================================================
+Backend only:
+- cd backend
+- pip install -r requirements.txt
+- python run.py
+
+Backend with WebSocket:
+- cd backend
+- python run.py --websocket
+
+Frontend:
+- cd frontend
+- flutter pub get
+- flutter run
+- Enter PC IP address and connect
+
+============================================================
+15) PROJECT STRUCTURE (TOP-LEVEL)
+============================================================
+Pothole_detection/
+- backend/ (Python detection system)
+- frontend/ (Flutter app)
+- WEBSOCKET_SETUP.md
+- run_backend.bat / run_backend_websocket.bat
+- docs and paper folder for documentation and research
+
+============================================================
+16) KEY FEATURES TO HIGHLIGHT IN PRESENTATION
+============================================================
+- Dual neural network design (YOLOv8 + MiDaS)
+- Real-time detection and severity classification
+- Modular, professional codebase (refactored into clean modules)
+- Presets for different hardware and performance needs
+- WebSocket integration for live mobile monitoring
+
+============================================================
+17) LIMITATIONS (HONEST CONSTRAINTS)
+============================================================
+- Accuracy depends on training data quality and camera conditions.
+- Depth estimation is relative (monocular), needs calibration for accuracy.
+- Low light or motion blur can reduce detection performance.
+- Real-time performance depends on GPU availability.
+
+============================================================
+18) FUTURE WORK IDEAS
+============================================================
+- Improve dataset size and diversity (weather, lighting, road types).
+- Add GPS and map integration for pothole location mapping.
+- Cloud backend for central reporting and analytics.
+- Edge deployment on embedded devices (Jetson, Raspberry Pi).
+- Model quantization for faster inference on CPU.
+- Automatic report generation for road maintenance teams.
+
+============================================================
+19) HOW TO EXPLAIN TO TEACHER (SHORT SCRIPT)
+============================================================
+- "Our system detects potholes from video in real time.
+   We use two neural networks: YOLOv8 finds potholes; MiDaS estimates
+   depth from the pothole region. Depth is then combined with geometric
+   rules to classify severity. We also use IoU-based tracking to make
+   detections stable across frames. The backend runs in Python and the
+   frontend in Flutter connects via WebSocket, showing live alerts." 
+
+============================================================
+20) QUICK Q&A PREP
+============================================================
+Q: Why two neural networks?
+A: One is for detection (what and where), the other is for depth (how deep).
+
+Q: Is it real-time?
+A: Yes, with speed or balanced presets and GPU support.
+
+Q: How reliable is depth?
+A: It is relative depth from MiDaS, improved by camera geometry and
+   calibration to estimate physical depth.
+
+Q: Why WebSocket instead of Bluetooth?
+A: WebSocket is more reliable, faster, and works across the entire WiFi range.
+
+============================================================
+END OF FILE
