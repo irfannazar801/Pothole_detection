@@ -16,6 +16,7 @@ backend/videos/*.mp4
 backend/videos/*.avi
 backend/models/*.pt
 backend/paper
+backend/tools
 
 # Frontend specific - Flutter/Dart
 frontend/build/
